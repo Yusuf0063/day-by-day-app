@@ -1,25 +1,311 @@
 @import "tailwindcss";
 
-@theme inline {
-  /* Uygulama genelinde Next font değişkenlerini kullan */
+@theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 /* Arka plan ve metin renklerini Tailwind sınıflarıyla
-   (ör. bg-white dark:bg-slate-950) yönetiyoruz.
-   Bu yüzden burada body'ye sabit renk vermiyoruz. */
+    (ör. bg-white dark:bg-slate-950) yönetiyoruz.
+    Bu yüzden burada body'ye sabit renk vermiyoruz. */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Themes */
+.theme-ocean {
+  background-color: #ecfeff;
+  color: #164e63;
+  /* Cyan 900 */
+  background-image: linear-gradient(to bottom right, #ecfeff, #cffafe);
+}
+
+/* Ocean Overrides */
+/* Text Colors - High Contrast */
+.theme-ocean .text-purple-500,
+.theme-ocean .text-purple-600,
+.theme-ocean .text-purple-400,
+.theme-ocean .text-slate-600,
+.theme-ocean .text-slate-500 {
+  color: #0e7490 !important;
+  /* Cyan 700 - Darker for readability */
+}
+
+.theme-ocean .font-bold.text-slate-900,
+.theme-ocean .font-bold.dark\:text-slate-50,
+.theme-ocean h1,
+.theme-ocean h2,
+.theme-ocean h3 {
+  color: #155e75 !important;
+  /* Cyan 800 - Very dark */
+}
+
+/* Backgrounds - Increased Opacity for Readability */
+.theme-ocean .bg-purple-500,
+.theme-ocean .bg-purple-600 {
+  background-color: #0891b2 !important;
+}
+
+.theme-ocean .bg-purple-50,
+.theme-ocean .bg-purple-100 {
+  background-color: #ecfeff !important;
+  border-color: #06b6d4 !important;
+  /* Stronger border */
+}
+
+/* Cards & Containers - Make them readable */
+.theme-ocean .bg-white,
+.theme-ocean .dark\:bg-slate-950 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  /* High opacity white */
+  backdrop-filter: blur(12px);
+  border-color: #cffafe !important;
+}
+
+.dark .theme-ocean .bg-white,
+.dark .theme-ocean .dark\:bg-slate-950 {
+  background-color: rgba(8, 51, 68, 0.85) !important;
+  /* High opacity dark blue */
+  border-color: #155e75 !important;
+}
+
+/* Gradients */
+.theme-ocean .from-purple-500,
+.theme-ocean .from-purple-600,
+.theme-ocean .from-purple-100 {
+  --tw-gradient-from: #0891b2 !important;
+}
+
+.theme-ocean .to-fuchsia-600,
+.theme-ocean .to-fuchsia-500 {
+  --tw-gradient-to: #0284c7 !important;
+  /* Sky 600 */
+}
+
+.theme-ocean .ring-purple-500,
+.theme-ocean .ring-purple-200,
+.theme-ocean .ring-purple-400 {
+  --tw-ring-color: #0891b2 !important;
+}
+
+.theme-ocean svg.text-purple-500,
+.theme-ocean svg.text-purple-600 {
+  color: #0891b2 !important;
+}
+
+.dark .theme-ocean {
+  background-color: #083344;
+  color: #ecfeff;
+  background-image: linear-gradient(to bottom right, #083344, #155e75);
+}
+
+.theme-forest {
+  background-color: #ecfdf5;
+  color: #064e3b;
+  /* Emerald 900 */
+  background-image: linear-gradient(to bottom right, #ecfdf5, #d1fae5);
+}
+
+/* Forest Overrides */
+/* Text Colors */
+.theme-forest .text-purple-500,
+.theme-forest .text-purple-600,
+.theme-forest .text-purple-400,
+.theme-forest .text-slate-600,
+.theme-forest .text-slate-500 {
+  color: #059669 !important;
+  /* Emerald 600 */
+}
+
+.theme-forest .font-bold.text-slate-900,
+.theme-forest .font-bold.dark\:text-slate-50,
+.theme-forest h1,
+.theme-forest h2,
+.theme-forest h3 {
+  color: #166534 !important;
+  /* Green 800 */
+}
+
+/* Backgrounds */
+.theme-forest .bg-purple-500,
+.theme-forest .bg-purple-600 {
+  background-color: #059669 !important;
+}
+
+.theme-forest .bg-purple-50,
+.theme-forest .bg-purple-100 {
+  background-color: #ecfdf5 !important;
+  border-color: #10b981 !important;
+}
+
+/* Cards & Containers */
+.theme-forest .bg-white,
+.theme-forest .dark\:bg-slate-950 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(12px);
+  border-color: #d1fae5 !important;
+}
+
+.dark .theme-forest .bg-white,
+.dark .theme-forest .dark\:bg-slate-950 {
+  background-color: rgba(2, 44, 34, 0.85) !important;
+  border-color: #065f46 !important;
+}
+
+/* Gradients */
+.theme-forest .from-purple-500,
+.theme-forest .from-purple-600,
+.theme-forest .from-purple-100 {
+  --tw-gradient-from: #059669 !important;
+}
+
+.theme-forest .to-fuchsia-600,
+.theme-forest .to-fuchsia-500 {
+  --tw-gradient-to: #16a34a !important;
+  /* Green 600 */
+}
+
+.theme-forest .ring-purple-500,
+.theme-forest .ring-purple-200 {
+  --tw-ring-color: #059669 !important;
+}
+
+.theme-forest svg.text-purple-500 {
+  color: #059669 !important;
+}
+
+/* Custom Animations */
+@keyframes flame-burn {
+
+  0%,
+  100% {
+    transform: scale(1) translateY(0) rotate(-3deg);
+    filter: drop-shadow(0 0 10px rgba(234, 88, 12, 0.9));
+  }
+
+  25% {
+    transform: scale(1.1) translateY(-2px) rotate(3deg);
+  }
+
+  50% {
+    transform: scale(1.05) translateY(0) rotate(-3deg);
+    filter: drop-shadow(0 0 25px rgba(220, 38, 38, 1));
+  }
+
+  75% {
+    transform: scale(1.15) translateY(-3px) rotate(3deg);
+  }
+}
+
+.animate-flame {
+  animation: flame-burn 0.8s infinite ease-in-out;
+}
+
+/* Realistic Fire Effect */
+@keyframes spin-fire {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.realistic-fire {
+  position: relative;
+  border-radius: 9999px;
+  /* rounded-full */
+}
+
+/* Inner Glow/Base */
+.realistic-fire::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  /* Slightly larger than container */
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg,
+      #fca5a5,
+      /* Red-300 */
+      #ef4444,
+      /* Red-500 */
+      #f97316,
+      /* Orange-500 */
+      #fcd34d,
+      /* Yellow-300 */
+      #f97316,
+      #ef4444,
+      #fca5a5);
+  animation: spin-fire 1.5s linear infinite;
+  filter: blur(8px);
+  z-index: -1;
+}
+
+/* Outer Flare */
+.realistic-fire::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 9999px;
+  background: conic-gradient(from 180deg,
+      #ea580c,
+      /* Orange-600 */
+      #dc2626,
+      /* Red-600 */
+      #facc15,
+      /* Yellow-400 */
+      #dc2626,
+      #ea580c);
+  animation: spin-fire 2s linear infinite reverse;
+  filter: blur(16px);
+  opacity: 0.8;
+  z-index: -2;
+}
+
 /* HEATMAP STYLES (Mor Tema) */
 .react-calendar-heatmap text {
   font-size: 10px;
-  fill: #9ca3af; /* Tarih yazı rengi */
+  fill: #9ca3af;
+  /* Tarih yazı rengi */
+}
+
+/* Şık Ovallik (Yuvarlatılmış Köşeler) */
+.react-calendar-heatmap rect {
+  rx: 3px;
+  ry: 3px;
 }
 
 .react-calendar-heatmap .color-empty {
-  fill: #f3f4f6; /* Hiç aktivite yoksa (Gri) */
+  fill: #f3f4f6;
+  /* Hiç aktivite yoksa (Gri) */
 }
 
-.react-calendar-heatmap .color-scale-1 { fill: #d8b4fe; } /* Az Aktivite (Açık Mor) */
-.react-calendar-heatmap .color-scale-2 { fill: #c084fc; }
-.react-calendar-heatmap .color-scale-3 { fill: #a855f7; }
-.react-calendar-heatmap .color-scale-4 { fill: #7e22ce; } /* Çok Aktivite (Koyu Mor) */
+:is(.dark) .react-calendar-heatmap .color-empty {
+  fill: #1e293b;
+  /* Dark mode: slate-800 */
+}
+
+.react-calendar-heatmap .color-scale-1 {
+  fill: #d8b4fe;
+}
+
+/* 200 */
+.react-calendar-heatmap .color-scale-2 {
+  fill: #c084fc;
+}
+
+/* 400 */
+.react-calendar-heatmap .color-scale-3 {
+  fill: #a855f7;
+}
+
+/* 500 */
+.react-calendar-heatmap .color-scale-4 {
+  fill: #7e22ce;
+}
+
+/* 700 */

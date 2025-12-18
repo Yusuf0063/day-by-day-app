@@ -9,11 +9,14 @@ import {
   Lock,
   Medal,
   Rocket,
-  User,
+  User as UserIcon,
   UserCircle2,
+  ShoppingBag,
+  Zap,
 } from "lucide-react";
+import MarketModal from "../../components/market-modal";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { auth, db } from "../../lib/firebase";
 import {
   collection,
@@ -22,9 +25,8 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
-import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import AuthModal from "../../components/auth-modal";
-import { type User } from "firebase/auth";
 import CalendarHeatmap from "react-calendar-heatmap";
 import { BADGES, type BadgeDefinition, type BadgeId } from "../../lib/badges";
 
@@ -36,9 +38,13 @@ type Habit = {
 type UserStats = {
   level: number;
   score: number;
+  totalXP?: number;
+  inventory: string[];
+  activeTheme?: string | null;
+  activeFrame?: string | null;
 };
 
-const getBadgeIconElement = (badge: BadgeDefinition): JSX.Element => {
+const getBadgeIconElement = (badge: BadgeDefinition) => {
   switch (badge.icon) {
     case "Rocket":
       return <Rocket className="h-6 w-6" />;
@@ -57,27 +63,27 @@ export default function ProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [userStats, setUserStats] = useState<UserStats>({ level: 1, score: 0 });
+  const [userStats, setUserStats] = useState<UserStats>({ level: 1, score: 0, inventory: [] });
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [isMarketOpen, setIsMarketOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const [earnedBadges, setEarnedBadges] = useState<BadgeId[]>([]);
 
-  // Auth
+  // Auth: Kullanıcı kontrolü
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
         setUserId(user.uid);
-        return;
+      } else {
+        // Giriş yoksa Login sayfasına yönlendir
+        router.push("/login");
       }
-
-      const cred = await signInAnonymously(auth);
-      setCurrentUser(cred.user);
-      setUserId(cred.user.uid);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   // Kullanıcı seviye / puan
   useEffect(() => {
@@ -86,18 +92,32 @@ export default function ProfilePage() {
     const userRef = doc(db, "users", userId);
     const unsubscribe = onSnapshot(userRef, (snap) => {
       if (!snap.exists()) {
-        setUserStats({ level: 1, score: 0 });
+        setUserStats({ level: 1, score: 0, inventory: [] });
         setEarnedBadges([]);
         return;
       }
       const data = snap.data() as {
         level?: number;
         score?: number;
+        totalXP?: number;
         earnedBadges?: string[];
+        inventory?: string[];
+        activeTheme?: string;
+        activeFrame?: string;
       };
+
+      // Eğer totalXP yoksa, mevcut seviye ve puandan hesapla
+      const calculatedTotalXP = typeof data.totalXP === 'number'
+        ? data.totalXP
+        : ((data.level ?? 1) - 1) * 100 + (data.score ?? 0);
+
       setUserStats({
         level: data.level ?? 1,
         score: data.score ?? 0,
+        totalXP: calculatedTotalXP,
+        inventory: data.inventory ?? [],
+        activeTheme: data.activeTheme ?? null,
+        activeFrame: data.activeFrame ?? null,
       });
       setEarnedBadges(
         Array.isArray(data.earnedBadges) ? (data.earnedBadges as BadgeId[]) : []
@@ -164,7 +184,23 @@ export default function ProfilePage() {
     return d;
   }, []);
 
-  const progressPercent = Math.min(userStats.score, 100);
+  const progressPercent = Math.min(
+    userStats.score, // 100 puan hedefli yüzde hesabı (score zaten 0-99 arası döner teorik olarak, veya artar)
+    100
+  );
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push("/login");
+    } catch (e) {
+      console.error("Sign out error", e);
+    }
+  };
+
+  if (!currentUser) {
+    return null; // Yönlendirme olurken boş ekran göster
+  }
 
   return (
     <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-50">
@@ -179,131 +215,124 @@ export default function ProfilePage() {
               Profil
             </h1>
           </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsMarketOpen(true)}
+              className="flex items-center gap-2 rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              Sanal Dükkan
+            </button>
+            <button
+              onClick={handleLogout}
+              className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400"
+            >
+              Çıkış Yap
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 space-y-4 pb-4">
           {/* Profil Kartı */}
-          <section className="flex flex-col items-center rounded-3xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-100 dark:bg-slate-900 dark:ring-slate-800">
-            <div className="mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-purple-50 text-purple-500 shadow-sm dark:bg-purple-900/40 dark:text-purple-300">
-              <UserCircle2 className="h-12 w-12" />
-            </div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
-              {currentUser && !currentUser.isAnonymous
-                ? currentUser.email
-                : "Misafir Kullanıcı"}
-            </h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {currentUser && !currentUser.isAnonymous
-                ? "Gerçek hesap ile giriş yaptınız."
-                : "Giriş yapmadan anonim olarak ilerliyorsun."}
-            </p>
+          {/* Profil & Seviye Kartı */}
+          <section className="relative overflow-hidden rounded-3xl bg-white p-6 shadow-lg shadow-purple-500/5 ring-1 ring-slate-100 dark:bg-slate-900 dark:ring-slate-800">
+            {/* Arka plan dekorasyonu */}
+            <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl dark:bg-purple-500/20" />
+            <div className="absolute -left-12 -bottom-12 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl dark:bg-blue-500/20" />
 
-            {currentUser?.isAnonymous ? (
-              <div className="mt-4 w-full max-w-xs">
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="w-full rounded-full bg-gradient-to-r from-purple-600 to-purple-500 px-4 py-2 text-sm font-medium text-white"
-                >
-                  Verilerini Kaybetme! Hesap Oluştur
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4 w-full max-w-xs space-y-1.5">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="text-sm text-slate-600 dark:text-slate-200">
-                    {currentUser?.email}
+            <div className="relative flex flex-col items-center text-center">
+              {/* Avatar & Level Badge */}
+              <div className="relative mb-4">
+                <div className={`relative inline-flex rounded-full transition-all duration-300
+                   ${userStats.activeFrame === 'gold' ? 'mt-4 ring-4 ring-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.6)]' : ''}
+                   ${userStats.activeFrame === 'neon' ? 'mt-4 ring-[6px] ring-fuchsia-500 shadow-[0_0_40px_#d946ef,0_0_80px_#8b5cf6,0_0_15px_#ffffff] animate-pulse' : ''}
+                   ${userStats.activeFrame === 'fire' ? 'mt-4 realistic-fire' : ''}
+                `}>
+                  {/* Crown for Gold Frame */}
+                  {userStats.activeFrame === 'gold' && (
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 transform z-10">
+                      <Crown className="h-10 w-10 text-yellow-500 fill-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] animate-bounce" />
+                    </div>
+                  )}
+
+                  {/* Zap for Neon Frame */}
+                  {userStats.activeFrame === 'neon' && (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 transform z-10">
+                      <Zap className="h-14 w-14 text-fuchsia-400 fill-violet-500 drop-shadow-[0_0_20px_#d946ef] animate-[bounce_1.5s_infinite]" />
+                    </div>
+                  )}
+
+                  {/* Flame for Fire Frame */}
+                  {userStats.activeFrame === 'fire' && (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 transform z-10">
+                      <Flame className="h-16 w-16 text-orange-500 fill-red-600 animate-flame" />
+                    </div>
+                  )}
+
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-purple-100 to-white shadow-xl ring-4 ring-white dark:from-slate-800 dark:to-slate-900 dark:ring-slate-800">
+                    <UserCircle2 className="h-16 w-16 text-purple-600 dark:text-purple-400" />
                   </div>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await signOut(auth);
-                      } catch (e) {
-                        console.error("Sign out error", e);
-                      }
-                    }}
-                    className="rounded-full bg-slate-100 px-4 py-2 text-sm"
-                  >
-                    Çıkış Yap
-                  </button>
+
+                  <div className="absolute -bottom-2 -right-2 flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-lg font-bold text-white shadow-lg ring-4 ring-white dark:ring-slate-900">
+                    {userStats.level}
+                  </div>
                 </div>
               </div>
-            )}
-
-            <AuthModal
-              open={showAuthModal}
-              onClose={() => setShowAuthModal(false)}
-            />
-
-            <div className="mt-4 w-full max-w-xs space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-slate-700 dark:text-slate-200">
-                  Seviye {userStats.level}
-                </span>
-                <span className="text-slate-400 dark:text-slate-400">
-                  {userStats.score} / 100 Puan
-                </span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-purple-100 dark:bg-purple-950/60">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-purple-500 to-purple-600 transition-all"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                Toplam tamamlanan görev:{" "}
-                <span className="font-semibold text-slate-600 dark:text-slate-200">
-                  {totalCompleted}
-                </span>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">
+                {currentUser.displayName || currentUser.email?.split('@')[0] || "Misafir"}
+              </h2>
+              <p className="text-xs font-medium uppercase tracking-wider text-purple-500 dark:text-purple-400">
+                {userStats.level >= 5 ? "Alışkanlık Ustası" : "Yeni Başlayan"}
               </p>
-            </div>
-          </section>
 
-          {/* Yıllık Aktivite Isı Haritası */}
-          <section className="overflow-x-auto rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-900 dark:ring-slate-800">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">
-                  Yıllık Aktivite
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Son 1 yılda hangi günlerde aktif oldun?
-                </p>
+              {/* XP Bar */}
+              <div className="mt-6 w-full max-w-xs">
+                <div className="mb-1 flex items-center justify-between text-xs font-semibold">
+                  <span className="text-slate-600 dark:text-slate-300">XP</span>
+                  <span className="text-purple-600 dark:text-purple-400">{userStats.score} / 100</span>
+                </div>
+                <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-100 shadow-inner dark:bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-purple-600 shadow-[0_0_10px_rgba(168,85,247,0.5)] transition-all duration-1000"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="min-w-[520px] sm:min-w-0">
-              <CalendarHeatmap
-                startDate={oneYearAgo}
-                endDate={today}
-                values={activityValues}
-                showWeekdayLabels
-                classForValue={(value) => {
-                  if (!value || !value.count) {
-                    return "color-empty";
-                  }
-
-                  const count = value.count as number;
-
-                  if (count >= 8) return "color-scale-4";
-                  if (count >= 5) return "color-scale-3";
-                  if (count >= 3) return "color-scale-2";
-                  return "color-scale-1";
-                }}
-              />
+              {/* İstatistikler Grid */}
+              <div className="mt-6 grid w-full max-w-xs grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Tamamlanan</div>
+                  <div className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    {totalCompleted}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Seviye</div>
+                  <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                    {userStats.level}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Toplam XP</div>
+                  <div className="text-lg font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                    {userStats.totalXP ?? 0}
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
           {/* Rozetler */}
-          <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-900 dark:ring-slate-800">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">
-                  Rozetler
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  İlerlemeni gösteren küçük ödüller.
-                </p>
-              </div>
+          <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100 dark:bg-slate-900 dark:ring-slate-800">
+            <div className="mb-4">
+              <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-50">
+                <Medal className="h-5 w-5 text-yellow-500" />
+                Başarımlar
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Görevleri tamamla, rozetleri topla!
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -313,33 +342,36 @@ export default function ProfilePage() {
                 return (
                   <button
                     key={badge.id}
-                    type="button"
                     onClick={() => {
-                      alert(badge.description);
+                      // Basit alert yerine belki ilerde modal açılır
+                      alert(`${badge.name}: ${badge.description}`);
                     }}
-                    className={`relative flex flex-col items-center rounded-2xl border px-2.5 py-3 text-center text-xs shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
-                      unlocked
-                        ? "border-purple-200 bg-gradient-to-b from-white to-purple-50 text-slate-800 dark:border-purple-500/60 dark:from-slate-900 dark:to-purple-950/40"
-                        : "border-slate-100 bg-slate-50 text-slate-400 opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500"
-                    }`}
-                  >
-                    <div
-                      className={`mb-1.5 flex h-9 w-9 items-center justify-center rounded-full ${
-                        unlocked
-                          ? "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-200"
-                          : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
+                    className={`group relative flex flex-col items-center overflow-hidden rounded-2xl border p-4 text-center transition-all hover:scale-[1.02] active:scale-95 ${unlocked
+                      ? "border-purple-200 bg-gradient-to-br from-white to-purple-50 shadow-md shadow-purple-500/10 dark:border-purple-500/30 dark:from-slate-900 dark:to-purple-900/20"
+                      : "border-slate-100 bg-slate-50 grayscale dark:border-slate-800 dark:bg-slate-900/50"
                       }`}
-                    >
+                  >
+                    {/* Unlocked Glow Effect */}
+                    {unlocked && (
+                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-purple-500/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                    )}
+
+                    <div className={`mb-3 flex h-12 w-12 items-center justify-center rounded-xl shadow-sm ring-1 ring-inset transition-transform group-hover:rotate-6 ${unlocked
+                      ? "bg-gradient-to-br from-purple-100 to-white text-purple-600 ring-purple-200 dark:from-purple-900 dark:to-slate-900 dark:text-purple-300 dark:ring-purple-800"
+                      : "bg-slate-100 text-slate-300 ring-slate-200 dark:bg-slate-800 dark:text-slate-600 dark:ring-slate-700"
+                      }`}>
                       {getBadgeIconElement(badge)}
                     </div>
-                    <div className="mb-0.5 line-clamp-1 font-semibold">
+
+                    <div className={`text-sm font-bold ${unlocked ? "text-slate-800 dark:text-slate-100" : "text-slate-400 dark:text-slate-500"}`}>
                       {badge.name}
                     </div>
-                    <div className="line-clamp-2 text-[11px]">
+                    <div className="mt-1 line-clamp-2 text-[10px] font-medium text-slate-400 dark:text-slate-500">
                       {badge.description}
                     </div>
+
                     {!unlocked && (
-                      <div className="absolute right-1.5 top-1.5 rounded-full bg-white/80 p-1 text-slate-300 shadow-sm dark:bg-slate-900/80 dark:text-slate-500">
+                      <div className="absolute right-2 top-2 text-slate-300 dark:text-slate-600">
                         <Lock className="h-3 w-3" />
                       </div>
                     )}
@@ -356,14 +388,12 @@ export default function ProfilePage() {
             {/* Ana Ekran */}
             <Link
               href="/"
-              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${
-                pathname === "/" ? "text-purple-600" : "text-slate-400"
-              }`}
+              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${pathname === "/" ? "text-purple-600" : "text-slate-400"
+                }`}
             >
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                  pathname === "/" ? "bg-purple-50" : ""
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ${pathname === "/" ? "bg-purple-50" : ""
+                  }`}
               >
                 <HomeIcon className="h-5 w-5" />
               </span>
@@ -373,14 +403,12 @@ export default function ProfilePage() {
             {/* İstatistikler */}
             <Link
               href="/stats"
-              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${
-                pathname === "/stats" ? "text-purple-600" : "text-slate-400"
-              }`}
+              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${pathname === "/stats" ? "text-purple-600" : "text-slate-400"
+                }`}
             >
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                  pathname === "/stats" ? "bg-purple-50" : ""
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ${pathname === "/stats" ? "bg-purple-50" : ""
+                  }`}
               >
                 <BarChart3 className="h-5 w-5" />
               </span>
@@ -390,22 +418,29 @@ export default function ProfilePage() {
             {/* Profil */}
             <Link
               href="/profile"
-              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${
-                pathname === "/profile" ? "text-purple-600" : "text-slate-400"
-              }`}
+              className={`flex flex-col items-center gap-0.5 text-xs font-medium ${pathname === "/profile" ? "text-purple-600" : "text-slate-400"
+                }`}
             >
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                  pathname === "/profile" ? "bg-purple-50" : ""
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ${pathname === "/profile" ? "bg-purple-50" : ""
+                  }`}
               >
-                <User className="h-5 w-5" />
+                <UserIcon className="h-5 w-5" />
               </span>
               <span>Profil</span>
             </Link>
           </div>
         </nav>
       </div>
+      <MarketModal
+        isOpen={isMarketOpen}
+        onClose={() => setIsMarketOpen(false)}
+        userId={userId}
+        currentScore={userStats.score}
+        ownedItems={userStats.inventory}
+        activeTheme={userStats.activeTheme}
+        activeFrame={userStats.activeFrame}
+      />
     </div>
   );
 }

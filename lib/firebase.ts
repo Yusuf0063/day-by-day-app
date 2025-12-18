@@ -1,6 +1,6 @@
 // lib/firebase.ts
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -15,3 +15,22 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const googleProvider = new GoogleAuthProvider();
+
+export const getMessagingInstance = async () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const { getMessaging, isSupported } = await import("firebase/messaging");
+    const supported = await isSupported();
+
+    if (supported) {
+      return getMessaging(app);
+    }
+    console.log("Firebase Messaging not supported in this browser.");
+    return null;
+  } catch (e) {
+    console.error("Error initializing messaging:", e);
+    return null;
+  }
+};
