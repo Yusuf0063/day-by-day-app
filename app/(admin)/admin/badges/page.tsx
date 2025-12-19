@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, orderBy, addDoc, doc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
+import { logSecurityEvent } from "@/lib/logger";
 import { Trophy, Plus, Trash2, Edit2, X, Save } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,6 +72,15 @@ export default function BadgesPage() {
                 conditionValue: 1,
                 xpReward: 50
             });
+
+            // Log Admin Action
+            await logSecurityEvent({
+                type: "admin_action",
+                message: `Yeni rozet oluşturuldu: ${formData.name}`,
+                level: "info",
+                userId: auth.currentUser?.uid,
+                userEmail: auth.currentUser?.email || undefined
+            });
         } catch (error) {
             console.error("Rozet ekleme hatası:", error);
             toast.error("Rozet eklenirken bir hata oluştu.");
@@ -83,6 +93,16 @@ export default function BadgesPage() {
         try {
             await deleteDoc(doc(db, "badges", id));
             toast.success("Rozet silindi.");
+
+            // Log Admin Action
+            await logSecurityEvent({
+                type: "data_deletion",
+                message: `Rozet silindi: ${id}`,
+                level: "warning",
+                userId: auth.currentUser?.uid,
+                userEmail: auth.currentUser?.email || undefined,
+                metadata: { badgeId: id }
+            });
         } catch (error) {
             console.error("Silme hatası:", error);
             toast.error("Silinemedi.");

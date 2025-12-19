@@ -20,37 +20,48 @@ import {
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  Bell,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  MoreVertical,
-  Plus,
-  Trash2,
-  X,
-  Heart,
-  Briefcase,
-  Zap,
-  Users,
-  Star,
-  Home as HomeIcon,
-  BarChart3,
-  User,
-  BookOpen,
-  Infinity,
-  Crown,
-  Sun,
-  Moon,
+  Bell, Check, ChevronLeft, ChevronRight, MoreVertical, Plus, Trash2, X, Heart,
+  Briefcase, Zap, Users, Star, Home as HomeIcon, BarChart3, User, BookOpen, Infinity, Crown, Trophy, Sun, Moon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BadgeDefinition } from "../lib/badges";
-import confetti from "canvas-confetti";
 import useSound from "use-sound";
 import { motion, AnimatePresence } from "framer-motion";
 import FcmManager from "../components/fcm-manager";
 import OfflineIndicator from "../components/offline-indicator";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
+import React, { Suspense } from "react";
+import { useGameStore, Habit as StoreHabit } from "../lib/store";
+
+// Lazy Load Modal
+const TutorialModal = dynamic(() => import("../components/tutorial-modal"), {
+  loading: () => null,
+  ssr: false // Client side only
+});
+
+// UI için yerel tip genişletmesi (ikon eklenmiş hali)
+type UIHabit = Omit<StoreHabit, 'icon'> & {
+  icon?: React.ReactNode;
+};
+
+// Config için Tip (Admin ile aynı)
+type GameRules = {
+  xpPerHabit: number;
+  baseLevelXP: number;
+  levelMultiplier: number;
+  dailyLoginBonus: number;
+  streakBonusMultiplier: number;
+};
+
+const DEFAULT_RULES: GameRules = {
+  xpPerHabit: 10,
+  baseLevelXP: 100,
+  levelMultiplier: 1.5,
+  dailyLoginBonus: 5,
+  streakBonusMultiplier: 0.5
+};
 
 const HABIT_CATEGORIES = [
   {
@@ -146,19 +157,10 @@ const calculateStreak = (completedDates: string[], referenceDate: Date = new Dat
   return streak;
 };
 
-type Habit = {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  completedDates: string[];
-  reminderTime?: string | null;
-  category: HabitCategoryId;
-  targetDays: number;
-  status?: string;
-  createdAtKey?: string | null;
-  isIndefinite?: boolean;
-};
+// Eski Habit tipini kaldiralim veya adapter kullanalim
+// type Habit = ... silindi.
+// Onun yerine UIHabit kullaniyoruz.
+
 
 const buildIconForHabit = (name: string): React.ReactNode => {
   const lower = name.toLowerCase();
@@ -177,25 +179,80 @@ const buildIconForHabit = (name: string): React.ReactNode => {
 };
 
 export default function Home() {
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const { user, habits: storeHabits, setUser, setHabits, addXP, loseHeart, refillHearts } = useGameStore();
+
+  // Local State (Sadece UI spesifik olanlar)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newHabitName, setNewHabitName] = useState("");
   const [newHabitDescription, setNewHabitDescription] = useState("");
   const [newHabitReminderTime, setNewHabitReminderTime] = useState("");
-  const [newHabitCategory, setNewHabitCategory] =
-    useState<HabitCategoryId>("other");
+  const [newHabitCategory, setNewHabitCategory] = useState<HabitCategoryId>("other");
   const [newHabitTargetDays, setNewHabitTargetDays] = useState(21);
   const [newHabitIsIndefinite, setNewHabitIsIndefinite] = useState(false);
-  const [level, setLevel] = useState(1);
-  const [score, setScore] = useState(0);
-  const [hearts, setHearts] = useState(3);
-  const [earnedBadges, setEarnedBadges] = useState<string[]>([]);
-  const [activeTheme, setActiveTheme] = useState<string | null>(null);
+
+  // Store'dan gelen verileri local değişkenlere ata (Kolay geçiş için)
+  const { level, score, hearts, earnedBadges, activeTheme, activeFrame, inventory } = user;
+
+  // Store'daki habit verilerine ikon ekleyerek UI için hazırla
+  const habits: UIHabit[] = storeHabits.map(h => ({
+    ...h,
+    icon: buildIconForHabit(h.name)
+  }));
+
   const [userId, setUserId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  // Loading için store.isLoading kullanılabilir ama şimdilik bırakalım
+  const [loading, setLoading] = useState(true);
+
+  // Dynamic Game Rules
+  const [gameRules, setGameRules] = useState<GameRules>(DEFAULT_RULES);
+  const rulesRef = useRef<GameRules>(DEFAULT_RULES);
+
+  // Tutorial State
+  const [showTutorial, setShowTutorial] = useState(false); // Transaction içinde güncel veriye erişmek için ref
+
+  // Tutorial Kontrolü
+  // Tutorial Kontrolü - Realtime Listener
+  useEffect(() => {
+    if (!userId) return;
+
+    const userRef = doc(db, "users", userId);
+    // onSnapshot ile dinle (Veri geç oluşsa bile yakalar)
+    const unsubscribe = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (!data.tutorialCompleted) {
+          setShowTutorial(true);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [userId]);
+
+  useEffect(() => {
+    rulesRef.current = gameRules;
+  }, [gameRules]);
+
+  useEffect(() => {
+    const fetchRules = async () => {
+      try {
+        const docRef = doc(db, "system_config", "game_rules");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setGameRules({ ...DEFAULT_RULES, ...docSnap.data() } as GameRules);
+        }
+      } catch (error) {
+        console.error("Config fetch error:", error);
+      }
+    };
+    fetchRules();
+  }, []);
   const pathname = usePathname();
   const router = useRouter();
-  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+  // State tanımları (Store dışı local olanlar)
+  const [editingHabit, setEditingHabit] = useState<UIHabit | null>(null);
   // const [playPop] = useSound("/sounds/pop.mp3");
   // const [playSuccess] = useSound("/sounds/success.mp3");
 
@@ -251,105 +308,73 @@ export default function Home() {
     return () => unsubscribe();
   }, [router]);
 
+  // useSound hook'ları
+  // useSound hooks removed from here (duplicate)
+
+
   // Hatırlatıcı kontrol referansı (spam'i önlemek için)
   const lastCheckedTimeRef = useRef<string | null>(null);
 
-  // Realtime: kullanıcı seviye / puan
+  // Realtime: Kullanıcı verisi ve alışkanlıkları dinle
   useEffect(() => {
     if (!userId) return;
 
+    // 1. Kullanıcı Verilerini Dinle
     const userRef = doc(db, "users", userId);
+    const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
 
-    const unsubscribe = onSnapshot(userRef, (snap) => {
-      if (!snap.exists()) {
-        // Varsayılan değerler
-        setLevel(1);
-        setScore(0);
-        setEarnedBadges([]);
-        return;
+        // Store Update
+        setUser({
+          level: userData.level || 1,
+          score: userData.score || 0, // Level Progress
+          totalXP: userData.totalXP || 0,
+          hearts: userData.hearts ?? 3,
+          gems: userData.gems || 0,
+          earnedBadges: userData.earnedBadges || [],
+          activeTheme: userData.activeTheme || null,
+          activeFrame: userData.activeFrame || null,
+          inventory: userData.inventory || [],
+        });
+
+        // 541 satırdaki checkBadges fonksiyonuna erişim gerekiyor ancak fonksiyon useEffect içinde değil.
+        // Bu yüzden checkBadges'i useEffect dışına taşımamız lazım veya burada çağırmamalıyız.
+        // Şimdilik pas geçiyoruz, store update yeterli.
+      } else {
+        // Yeni kullanıcı varsayılanları
+        setUser({ level: 1, score: 0, hearts: 3 });
       }
-
-      const data = snap.data() as {
-        level?: number;
-        score?: number;
-        hearts?: number;
-        earnedBadges?: string[];
-        inventory?: string[];
-        activeTheme?: string;
-      };
-      setLevel(data.level ?? 1);
-      setScore(data.score ?? 0);
-      setHearts(data.hearts ?? 3);
-      setActiveTheme(data.activeTheme ?? null);
-      setEarnedBadges(
-        Array.isArray(data.earnedBadges)
-          ? (data.earnedBadges as string[])
-          : []
-      );
     });
 
-    return () => unsubscribe();
-  }, [userId]);
+    // 2. Alışkanlıkları Dinle
+    const habitsQuery = query(
+      collection(db, "users", userId, "habits"),
+      orderBy("createdAt", "desc")
+    );
 
-  // Realtime: alışkanlık listesi
-  useEffect(() => {
-    if (!userId) return;
-
-    const habitsRef = collection(db, "users", userId, "habits");
-    const q = query(habitsRef, orderBy("createdAt", "asc"));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const nextHabits: Habit[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as {
-          name?: string;
-          description?: string;
-          completedDates?: string[];
-          reminderTime?: string;
-          category?: HabitCategoryId;
-          targetDays?: number;
-          status?: string;
-          createdAt?: Timestamp;
-          isIndefinite?: boolean;
-        };
-
-        const name = data.name ?? "";
-        const description =
-          data.description ?? "Hedefini buraya ekleyebilirsin";
-        const completedDates = Array.isArray(data.completedDates)
-          ? (data.completedDates as string[])
-          : [];
-        const reminderTime = data.reminderTime ?? null;
-        const category = data.category ?? "other";
-        const targetDays = data.targetDays ?? 21;
-        const status = data.status || "active";
-        const isIndefinite = data.isIndefinite ?? false;
-
-        // CreatedAt handling
-        let createdAtKey: string | null = null;
-        if (data.createdAt && typeof data.createdAt.toDate === "function") {
-          createdAtKey = getDateKey(data.createdAt.toDate());
-        }
-
+    const unsubscribeHabits = onSnapshot(habitsQuery, (snapshot) => {
+      const fetchedHabits = snapshot.docs.map((doc) => {
+        const data = doc.data();
         return {
-          id: docSnap.id,
-          name,
-          description,
-          completedDates,
-          reminderTime,
-          category,
-          icon: buildIconForHabit(name),
-          targetDays,
-          status,
-          createdAtKey,
-          isIndefinite,
-        };
+          id: doc.id,
+          ...data,
+          // Store'a saf veri kaydet (React Node değil!)
+          icon: "",
+        } as StoreHabit;
       });
 
-      setHabits(nextHabits);
+      setHabits(fetchedHabits);
+
+      setLoading(false);
+
     });
 
-    return () => unsubscribe();
-  }, [userId]);
+    return () => {
+      unsubscribeUser();
+      unsubscribeHabits();
+    };
+  }, [userId, setUser, setHabits]);
 
   // Günlük Kalp/HP Kontrolü (Giriş yapıldığında)
   useEffect(() => {
@@ -360,19 +385,26 @@ export default function Home() {
       try {
         await runTransaction(db, async (transaction) => {
           const userDoc = await transaction.get(userRef);
-          if (!userDoc.exists()) return;
 
-          const data = userDoc.data();
+          // Kullanıcı yoksa boş obje olarak başlat, return etme!
+          const data = userDoc.exists() ? userDoc.data() : {};
+
           const today = new Date().toISOString().split("T")[0];
           const lastLogin = data.lastLoginDate;
 
           // Bugün zaten giriş yaptıysa VE kullanıcı bilgileri zaten kayıtlıysa işlem yapma
           // (Eğer email yoksa, bugün girmiş olsa bile güncelle ki Admin Panelinde isimler görünsün)
-          if (lastLogin === today && data.email && data.displayName) return;
+          if (userDoc.exists() && lastLogin === today && data.email && data.displayName) return;
 
           let newHearts = data.hearts ?? 3;
           let newLevel = data.level ?? 1;
           let inventory = data.inventory ?? [];
+
+          // Yeni Kullanıcı ise
+          if (!userDoc.exists()) {
+            // Varsayılan değerler zaten atandı (hearts: 3, level: 1)
+            // Ekstra işlemler yapılabilir (örn: Hoşgeldin logu)
+          }
 
           if (lastLogin) {
             const lastDate = new Date(lastLogin);
@@ -402,17 +434,28 @@ export default function Home() {
             newHearts = 3;
           }
 
+          // Güncellenecek Veriler
+          const updateData: any = {
+            lastLoginDate: today,
+            hearts: newHearts,
+            level: newLevel,
+            inventory: inventory,
+            email: auth.currentUser?.email,
+            displayName: auth.currentUser?.displayName,
+            photoURL: auth.currentUser?.photoURL,
+          };
+
+          // Eğer yeni kullanıcıysa createdAt ekle
+          if (!userDoc.exists()) {
+            updateData.createdAt = serverTimestamp();
+
+            // Varsayılan olarak tutorialCompleted false (açıkça belirtelim)
+            updateData.tutorialCompleted = false;
+          }
+
           transaction.set(
             userRef,
-            {
-              lastLoginDate: today,
-              hearts: newHearts,
-              level: newLevel,
-              inventory: inventory,
-              email: auth.currentUser?.email, // Admin paneli için
-              displayName: auth.currentUser?.displayName, // Admin paneli için
-              photoURL: auth.currentUser?.photoURL, // Admin paneli için
-            },
+            updateData,
             { merge: true }
           );
         });
@@ -523,22 +566,26 @@ export default function Home() {
       let newTotalXP = currentTotalXP;
 
       // Puanlama her tarih için geçerlidir (Geçmiş günler dahil)
-      if (!wasCompletedForSelectedDate) {
-        // İşaretleme -> +10 puan
-        newScore = currentScore + 10;
-        newTotalXP = currentTotalXP + 10;
+      // Puanlama her tarih için geçerlidir (Geçmiş günler dahil)
+      const xpAmount = rulesRef.current.xpPerHabit; // DİNAMİK XP
+      const levelThreshold = rulesRef.current.baseLevelXP; // DİNAMİK EŞİK
 
-        if (newScore >= 100) {
+      if (!wasCompletedForSelectedDate) {
+        // İşaretleme -> +XP
+        newScore = currentScore + xpAmount;
+        newTotalXP = currentTotalXP + xpAmount;
+
+        if (newScore >= levelThreshold) {
           newLevel = currentLevel + 1;
-          // Fazla puanı bir sonraki seviyeye aktar (örn: 105 -> 5)
-          newScore = newScore - 100;
+          // Fazla puanı aktar
+          newScore = newScore - levelThreshold;
           didLevelUp = true;
           nextLevelForAlert = newLevel;
         }
       } else {
-        // İşareti kaldırma -> -10 (0 altına düşmesin)
-        newScore = Math.max(0, currentScore - 10);
-        newTotalXP = Math.max(0, currentTotalXP - 10);
+        // İşareti kaldırma -> -XP
+        newScore = Math.max(0, currentScore - xpAmount);
+        newTotalXP = Math.max(0, currentTotalXP - xpAmount);
       }
 
       transaction.set(
@@ -611,6 +658,8 @@ export default function Home() {
           if (keepGoing) {
             // Kullanıcı devam etmek istiyor
             playSuccess();
+            // confetti({ spread: 100, particleCount: 200 }); // Removed static confetti
+            const confetti = (await import("canvas-confetti")).default;
             confetti({ spread: 100, particleCount: 200 });
           } else {
             // Kullanıcı devam etmek istemiyor, ARŞİVLİYORUZ (statü: completed).
@@ -710,23 +759,28 @@ export default function Home() {
       // İlkini göster (modal için)
       setUnlockedBadge(newlyEarned[0]);
       setIsBadgeModalOpen(true);
-      playSuccess();
+      // Efektler: Patlama
+      const confetti = (await import("canvas-confetti")).default;
       confetti({
-        particleCount: 150,
+        particleCount: 100,
         spread: 70,
         origin: { y: 0.6 },
+        colors: ["#a855f7", "#ec4899", "#3b82f6"],
       });
+      playSuccess();
 
-      // Firestore'a kaydet (User dokümanına)
+      // Store Update (Zustand)
       // Burada sadece ID'leri ekliyoruz
       const newBadgeIds = newlyEarned.map((b) => b.id);
 
       // State güncelle
-      setEarnedBadges((prev) => [...prev, ...newBadgeIds]);
+      setUser({
+        earnedBadges: [...(earnedBadges || []), ...newBadgeIds]
+      });
 
       if (userId) {
         const userRef = doc(db, "users", userId);
-        updateDoc(userRef, {
+        await updateDoc(userRef, {
           earnedBadges: arrayUnion(...newBadgeIds),
           // Varsa XP ödülü de verilebilir
           score: score + (newlyEarned[0].xpReward || 50)
@@ -757,12 +811,12 @@ export default function Home() {
     setNewHabitIsIndefinite(false);
   };
 
-  const handleEditHabit = (habit: Habit) => {
+  const handleEditHabit = (habit: UIHabit) => {
     setEditingHabit(habit);
     setNewHabitName(habit.name);
     setNewHabitDescription(habit.description);
     setNewHabitReminderTime(habit.reminderTime ?? "");
-    setNewHabitCategory(habit.category ?? "other");
+    setNewHabitCategory((habit.category as HabitCategoryId) ?? "other");
     setNewHabitTargetDays(habit.targetDays ?? 21);
     setNewHabitIsIndefinite(habit.isIndefinite ?? false);
     setIsModalOpen(true);
@@ -812,8 +866,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-50 relative overflow-hidden">
-      {/* Çevrimdışı Göstergesi */}
       <OfflineIndicator />
+
+      {/* Tutorial Modal (Otomatik Açılır) */}
+      {userId && (
+        <Suspense fallback={null}>
+          <TutorialModal
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            userId={userId}
+          />
+        </Suspense>
+      )}
 
       {/* Ambient Background Effects */}
       <div className="fixed -right-32 -top-32 h-64 w-64 rounded-full bg-purple-500/10 blur-3xl pointer-events-none dark:bg-purple-900/20" />
@@ -1010,7 +1074,7 @@ export default function Home() {
         {/* Tarih Seçici (Yatay Takvim) */}
         <section className="mb-6">
           {(() => {
-            const focusedHabit = habits.find(h => h.id === focusedHabitId);
+            const focusedHabit = habits.find((h) => h.id === focusedHabitId) as UIHabit;
             const isFiniteHabit = focusedHabit && !focusedHabit.isIndefinite && focusedHabit.createdAtKey && focusedHabit.targetDays;
 
             type CalendarGroup = { id: string; label: string; dates: Date[] };

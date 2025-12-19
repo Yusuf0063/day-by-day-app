@@ -13,7 +13,11 @@ import {
   UserCircle2,
   ShoppingBag,
   Zap,
+  Trophy,
+  ChevronRight,
+  MessageSquare
 } from "lucide-react";
+import FeedbackModal from "../../components/feedback-modal";
 import MarketModal from "../../components/market-modal";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -58,6 +62,7 @@ export default function ProfilePage() {
   const [userStats, setUserStats] = useState<UserStats>({ level: 1, score: 0, inventory: [] });
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const [earnedBadges, setEarnedBadges] = useState<BadgeId[]>([]);
@@ -232,6 +237,14 @@ export default function ProfilePage() {
           </div>
           <div className="flex gap-2">
             <button
+              onClick={() => setIsFeedbackOpen(true)}
+              className="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span className="hidden sm:inline">Geri Bildirim</span>
+            </button>
+
+            <button
               onClick={() => setIsMarketOpen(true)}
               className="flex items-center gap-2 rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
             >
@@ -335,6 +348,23 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Liderlik Tablosu Kartı */}
+              <Link
+                href="/leaderboard"
+                className="mt-4 flex items-center justify-between rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 p-4 text-white shadow-lg shadow-indigo-500/20 transition-transform active:scale-95"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-white/20 p-2">
+                    <Trophy className="h-6 w-6 text-yellow-300" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold">Liderlik Tablosu</h3>
+                    <p className="text-xs text-indigo-100">Sıralamanı Gör & Yarış</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-indigo-200" />
+              </Link>
             </div>
           </section>
 
@@ -456,6 +486,14 @@ export default function ProfilePage() {
         activeTheme={userStats.activeTheme}
         activeFrame={userStats.activeFrame}
       />
+      {userId && (
+        <FeedbackModal
+          isOpen={isFeedbackOpen}
+          onClose={() => setIsFeedbackOpen(false)}
+          userId={userId}
+          userEmail={auth.currentUser?.email || undefined}
+        />
+      )}
     </div >
   );
 }

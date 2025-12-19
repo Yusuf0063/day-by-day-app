@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { User, Mail, Calendar, Trophy, Star, Shield, Activity, ArrowLeft } from "lucide-react";
+import { User, Mail, Calendar, Trophy, Star, Shield, Activity, ArrowLeft, Target, Flame, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
@@ -18,6 +18,15 @@ type UserProfile = {
     totalXP: number;
     createdAt?: Timestamp;
     role?: string;
+    inventory?: string[];
+};
+
+type UserHabit = {
+    id: string;
+    title: string;
+    category: string;
+    streak: number;
+    icon?: string;
 };
 
 type UserActivity = {
@@ -34,6 +43,7 @@ export default function UserDetailsPage() {
 
     const [user, setUser] = useState<UserProfile | null>(null);
     const [activities, setActivities] = useState<UserActivity[]>([]);
+    const [habits, setHabits] = useState<UserHabit[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -61,6 +71,14 @@ export default function UserDetailsPage() {
                     logs.push({ id: doc.id, ...doc.data() } as UserActivity);
                 });
                 setActivities(logs);
+
+                // 3. Kullanıcının Alışkanlıklarını Çek
+                const habitsSnapshot = await getDocs(collection(db, "users", userId, "habits"));
+                const userHabits: UserHabit[] = [];
+                habitsSnapshot.forEach((doc) => {
+                    userHabits.push({ id: doc.id, ...doc.data() } as UserHabit);
+                });
+                setHabits(userHabits);
 
             } catch (error) {
                 console.error("Veri çekme hatası:", error);
@@ -171,14 +189,79 @@ export default function UserDetailsPage() {
                     </div>
                 </div>
 
-                {/* Sağ Taraf: Aktivite Geçmişi (Timeline) */}
+                {/* Sağ Taraf: Tablı İçerik (Aktiviteler, Alışkanlıklar, Envanter) */}
                 <div className="md:col-span-2 space-y-6">
+
+                    {/* Alışkanlıklar */}
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Target className="h-5 w-5 text-indigo-500" />
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Alışkanlıklar</h3>
+                            <span className="ml-auto text-xs font-medium px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
+                                {habits.length} adet
+                            </span>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {habits.map((habit) => (
+                                <div key={habit.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                    <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 text-2xl shadow-sm">
+                                        {habit.icon || "📝"}
+                                    </div>
+                                    <div>
+                                        <div className="font-medium text-slate-900 dark:text-white line-clamp-1">{habit.title}</div>
+                                        <div className="text-xs text-slate-500 flex items-center gap-2">
+                                            <span className="flex items-center gap-1 text-orange-500">
+                                                <Flame className="h-3 w-3" /> {habit.streak} Gün
+                                            </span>
+                                            <span className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">
+                                                {habit.category}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {habits.length === 0 && (
+                                <div className="col-span-2 text-center py-4 text-slate-500 text-sm">
+                                    Kullanıcı henüz bir alışkanlık eklememiş.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Envanter */}
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-4">
+                            <ShoppingBag className="h-5 w-5 text-green-500" />
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Çanta (Envanter)</h3>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                            {user.inventory && user.inventory.length > 0 ? (
+                                user.inventory.map((itemId, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        {itemId === 'streak_freeze_1' && <Shield className="h-4 w-4 text-blue-500" />}
+                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                            {itemId === 'streak_freeze_1' ? "Seri Dondurucu" : itemId}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-slate-500 text-sm italic w-full text-center py-2">
+                                    Çanta boş.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+
+                    {/* Aktivite Geçmişi */}
                     <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
                         <div className="flex items-center gap-2 mb-6">
                             <Activity className="h-5 w-5 text-purple-600" />
                             <h3 className="font-bold text-lg text-slate-900 dark:text-white">Aktivite Geçmişi</h3>
                             <span className="ml-auto text-xs font-medium px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
-                                Toplam {activities.length} hareket
+                                Son {activities.length} hareket
                             </span>
                         </div>
 

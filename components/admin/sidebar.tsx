@@ -9,7 +9,9 @@ import {
     LogOut,
     Trophy,
     Activity,
-    ShieldAlert
+    ShieldAlert,
+    BarChart3,
+    MessageSquare
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
@@ -38,9 +40,24 @@ const menuItems = [
         icon: Trophy
     },
     {
+        title: "Geri Bildirimler",
+        href: "/admin/feedbacks",
+        icon: MessageSquare
+    },
+    {
+        title: "Analizler",
+        href: "/admin/analytics",
+        icon: BarChart3
+    },
+    {
         title: "Güvenlik Logları",
         href: "/admin/logs",
         icon: ShieldAlert
+    },
+    {
+        title: "Oyun Ayarları",
+        href: "/admin/settings",
+        icon: Settings
     },
 ];
 
@@ -85,8 +102,8 @@ export function AdminSidebar() {
                                 key={item.href}
                                 href={item.href}
                                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive
-                                        ? "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-300"
-                                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                                    ? "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-300"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200"
                                     }`}
                             >
                                 <item.icon className={`h-5 w-5 ${isActive ? "text-purple-600 dark:text-purple-300" : ""}`} />

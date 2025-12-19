@@ -8,11 +8,13 @@ import {
     signInWithEmailAndPassword,
     signOut,
     sendPasswordResetEmail,
+    updateProfile,
     getAdditionalUserInfo
 } from "firebase/auth";
+import { logSecurityEvent } from "../../lib/logger";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Trophy, ArrowRight, Mail, ArrowLeft } from "lucide-react";
+import { Trophy, ArrowRight, Mail, ArrowLeft, User } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -24,6 +26,7 @@ export default function LoginPage() {
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [displayName, setDisplayName] = useState(""); // Yeni state: Ad Soyad
 
     const handleGoogleLogin = async () => {
         setLoading(true);
@@ -60,6 +63,16 @@ export default function LoginPage() {
             // Auth state'in güncellenmesini bekle
             await new Promise(resolve => setTimeout(resolve, 500));
 
+            // Log Success
+            await logSecurityEvent({
+                type: "auth_login",
+                message: "Google ile giriş yapıldı",
+                userId: result.user.uid,
+                userEmail: result.user.email || undefined,
+                level: "info",
+                metadata: { provider: "google" }
+            });
+
             router.push("/"); // Başarılı olursa ana sayfaya git
         } catch (err: any) {
             console.error("Login failed:", err);
@@ -90,6 +103,14 @@ export default function LoginPage() {
                 default:
                     userMessage = `Giriş hatası: ${err.message || "Bilinmeyen hata"}`;
             }
+
+            // Log Failure
+            await logSecurityEvent({
+                type: "auth_failure",
+                message: `Google girişi başarısız: ${userMessage}`,
+                level: "warning",
+                metadata: { errorCode: errorCode }
+            });
 
             setError(userMessage);
         } finally {
@@ -145,8 +166,20 @@ export default function LoginPage() {
 
         try {
             if (isRegister) {
+                if (!displayName.trim()) {
+                    setError("Lütfen ad ve soyad giriniz.");
+                    setLoading(false);
+                    return;
+                }
+
                 // Kayıt ol
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+                // Profil İsmini Güncelle
+                await updateProfile(userCredential.user, {
+                    displayName: displayName
+                });
+
                 console.log("Kayıt başarılı:", userCredential.user.uid);
 
                 // Log Activity
@@ -158,7 +191,7 @@ export default function LoginPage() {
                         title: "Yeni üye!",
                         description: "aramıza katıldı.",
                         userId: userCredential.user.uid,
-                        userDisplayName: userCredential.user.email?.split("@")[0] || "Yeni Kullanıcı",
+                        userDisplayName: displayName || userCredential.user.email?.split("@")[0] || "Yeni Kullanıcı",
                         timestamp: serverTimestamp(),
                     });
                 } catch (e) {
@@ -184,6 +217,16 @@ export default function LoginPage() {
 
                 // Auth state'in güncellenmesini bekle
                 await new Promise(resolve => setTimeout(resolve, 500));
+
+                // Log Success
+                await logSecurityEvent({
+                    type: "auth_login",
+                    message: "Email ile giriş yapıldı",
+                    userId: userCredential.user.uid,
+                    userEmail: email,
+                    level: "info",
+                    metadata: { provider: "password" }
+                });
 
                 router.push("/");
             }
@@ -217,6 +260,17 @@ export default function LoginPage() {
             }
 
             setError(userMessage);
+
+            // Log Failure
+            if (!isRegister && !showForgotPassword) {
+                await logSecurityEvent({
+                    type: "auth_failure",
+                    message: `Email girişi başarısız: ${userMessage}`,
+                    userEmail: email,
+                    level: "warning",
+                    metadata: { errorCode: errorCode }
+                });
+            }
         } finally {
             setLoading(false);
         }
@@ -383,6 +437,25 @@ export default function LoginPage() {
                                             Kayıt Ol
                                         </button>
                                     </div>
+
+                                    {/* Ad Soyad Input (Sadece Kayıt Olurken) */}
+                                    {isRegister && (
+                                        <div className="mb-4">
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                                Ad Soyad
+                                            </label>
+                                            <div className="relative">
+                                                <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={displayName}
+                                                    onChange={(e) => setDisplayName(e.target.value)}
+                                                    placeholder="Adınız ve Soyadınız"
+                                                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder:text-slate-400 text-slate-900 dark:text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Email Input */}
                                     <div>

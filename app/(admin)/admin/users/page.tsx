@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, orderBy, query, limit } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { logSecurityEvent } from "@/lib/logger";
 import { User as UserIcon, Calendar, Trophy, Heart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,7 +81,18 @@ export default function UsersPage() {
 
             // 3. Başarılı ise yerel listeden çıkar
             setUsers((prev) => prev.filter((u) => u.id !== userId));
+            setUsers((prev) => prev.filter((u) => u.id !== userId));
             toast.success("Kullanıcı başarıyla silindi", { id: toastId });
+
+            // Log Critical Action
+            await logSecurityEvent({
+                type: "data_deletion",
+                message: `Kullanıcı silindi: ${userName} (${userId})`,
+                level: "critical",
+                userId: auth.currentUser?.uid,
+                userEmail: auth.currentUser?.email || undefined,
+                metadata: { deletedUserId: userId }
+            });
 
         } catch (error: any) {
             console.error("Silme hatası:", error);
