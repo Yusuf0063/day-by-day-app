@@ -343,8 +343,9 @@ export default function Home() {
           const today = new Date().toISOString().split("T")[0];
           const lastLogin = data.lastLoginDate;
 
-          // Bugün zaten giriş yaptıysa işlem yapma
-          if (lastLogin === today) return;
+          // Bugün zaten giriş yaptıysa VE kullanıcı bilgileri zaten kayıtlıysa işlem yapma
+          // (Eğer email yoksa, bugün girmiş olsa bile güncelle ki Admin Panelinde isimler görünsün)
+          if (lastLogin === today && data.email && data.displayName) return;
 
           let newHearts = data.hearts ?? 3;
           let newLevel = data.level ?? 1;
