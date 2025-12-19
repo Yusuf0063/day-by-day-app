@@ -385,6 +385,9 @@ export default function Home() {
               hearts: newHearts,
               level: newLevel,
               inventory: inventory,
+              email: auth.currentUser?.email, // Admin paneli için
+              displayName: auth.currentUser?.displayName, // Admin paneli için
+              photoURL: auth.currentUser?.photoURL, // Admin paneli için
             },
             { merge: true }
           );
