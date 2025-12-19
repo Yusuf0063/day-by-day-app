@@ -7,7 +7,8 @@ import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     signOut,
-    sendPasswordResetEmail
+    sendPasswordResetEmail,
+    getAdditionalUserInfo
 } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -35,6 +36,26 @@ export default function LoginPage() {
             }
 
             console.log("Google giriş başarılı:", result.user.uid);
+
+            // Yeni kullanıcı mı kontrol et ve logla
+            const additionalInfo = getAdditionalUserInfo(result);
+            if (additionalInfo?.isNewUser) {
+                try {
+                    const { addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+                    const { db } = await import("../../lib/firebase");
+                    await addDoc(collection(db, "global_activities"), {
+                        type: "user_signup",
+                        title: "Google ile katıldı!",
+                        description: "aramıza katıldı.",
+                        userId: result.user.uid,
+                        userDisplayName: result.user.displayName || "Google Kullanıcısı",
+                        userPhoto: result.user.photoURL,
+                        timestamp: serverTimestamp(),
+                    });
+                } catch (e) {
+                    console.error("Activity log error:", e);
+                }
+            }
 
             // Auth state'in güncellenmesini bekle
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -127,6 +148,22 @@ export default function LoginPage() {
                 // Kayıt ol
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 console.log("Kayıt başarılı:", userCredential.user.uid);
+
+                // Log Activity
+                try {
+                    const { addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+                    const { db } = await import("../../lib/firebase");
+                    await addDoc(collection(db, "global_activities"), {
+                        type: "user_signup",
+                        title: "Yeni üye!",
+                        description: "aramıza katıldı.",
+                        userId: userCredential.user.uid,
+                        userDisplayName: userCredential.user.email?.split("@")[0] || "Yeni Kullanıcı",
+                        timestamp: serverTimestamp(),
+                    });
+                } catch (e) {
+                    console.error("Activity log error:", e);
+                }
 
                 // Kayıt sonrası çıkış yap
                 await signOut(auth);

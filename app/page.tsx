@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BADGES, type BadgeDefinition } from "../lib/badges";
+import { BadgeDefinition } from "../lib/badges";
 import confetti from "canvas-confetti";
 import useSound from "use-sound";
 import { motion, AnimatePresence } from "framer-motion";
@@ -212,7 +212,30 @@ export default function Home() {
 
   const selectedDateKey = getDateKey(selectedDate);
   const todayKey = getDateKey(new Date());
+  const [dynamicBadges, setDynamicBadges] = useState<BadgeDefinition[]>([]);
   const isTodaySelected = selectedDateKey === todayKey;
+
+  // Rozetleri Firebase'den Çek
+  useEffect(() => {
+    const q = query(collection(db, "badges"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const badgeList: BadgeDefinition[] = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        badgeList.push({
+          id: doc.id,
+          name: d.name,
+          description: d.description,
+          icon: d.imageUrl || "Trophy",
+          xpReward: d.xpReward || 50,
+          conditionType: d.conditionType,
+          conditionValue: d.conditionValue
+        } as any);
+      });
+      setDynamicBadges(badgeList);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Auth: Kullanıcı kontrolü (Giriş yapmamışsa Login'e at)
   useEffect(() => {
@@ -538,6 +561,39 @@ export default function Home() {
           { merge: true }
         );
       }
+
+
+      // Log Habit Activity (Only if completing)
+      if (!wasCompletedForSelectedDate) {
+        const activitiesRef = collection(db, "global_activities");
+        const newActivityRef = doc(activitiesRef);
+
+        // Check if this action completes the goal
+        const currentCount = targetHabit.completedDates.length + 1;
+        const isFinalDay = !targetHabit.isIndefinite && currentCount === targetHabit.targetDays;
+
+        if (isFinalDay) {
+          transaction.set(newActivityRef, {
+            type: "habit_goal_reached", // Özel tip
+            title: targetHabit.name,
+            description: "hedefini BAŞARIYLA TAMAMLADI! 🏆",
+            userId,
+            userDisplayName: auth.currentUser?.displayName || "Kullanıcı",
+            userPhoto: auth.currentUser?.photoURL,
+            timestamp: serverTimestamp(),
+          });
+        } else {
+          transaction.set(newActivityRef, {
+            type: "habit_progress", // Günlük tip
+            title: targetHabit.name,
+            description: "günlük görevini yaptı:",
+            userId,
+            userDisplayName: auth.currentUser?.displayName || "Kullanıcı",
+            userPhoto: auth.currentUser?.photoURL,
+            timestamp: serverTimestamp(),
+          });
+        }
+      }
     });
 
     if (isCompletedNow) {
@@ -575,8 +631,26 @@ export default function Home() {
     // Rozet kontrolü
     checkForNewBadges();
 
-    if (didLevelUp && typeof window !== "undefined") {
-      window.alert(`Tebrikler! Seviye ${nextLevelForAlert} oldunuz!`);
+    if (didLevelUp) {
+      if (typeof window !== "undefined") {
+        window.alert(`Tebrikler! Seviye ${nextLevelForAlert} oldunuz!`);
+      }
+
+      // Log Level Up Activity
+      try {
+        const activitiesRef = collection(db, "global_activities");
+        await addDoc(activitiesRef, {
+          type: "level_up",
+          title: `Seviye ${nextLevelForAlert}!`,
+          description: "yeni bir seviyeye ulaştı.",
+          userId,
+          userDisplayName: auth.currentUser?.displayName || "Kullanıcı",
+          userPhoto: auth.currentUser?.photoURL,
+          timestamp: serverTimestamp(),
+        });
+      } catch (e) {
+        console.error("Log error:", e);
+      }
     }
   };
 
@@ -589,45 +663,75 @@ export default function Home() {
     );
 
     const maxStreak = habits.reduce((max, habit) => {
-      const s = calculateStreak(habit.completedDates); // For badges, we generally care about "current best" or just raw calculation. Defaulting to Today is fine or we could scan all.
-      // Actually checking relative to "Today" is correct for "Current Streak" badge.
-      // But standard "Max Streak" might need a full history scan? 
-      // For now, let's leave it as default (Today) for badge checking.
+      const s = calculateStreak(habit.completedDates);
       return s > max ? s : max;
     }, 0);
 
-    const ctx = {
-      totalCompleted,
-      maxStreak,
-      level,
-    };
+    // --- Rozet Kontrol ---
+    if (!dynamicBadges || dynamicBadges.length === 0) return;
 
-    const userRef = doc(db, "users", userId);
+    const newlyEarned: BadgeDefinition[] = [];
 
-    for (const badge of BADGES) {
-      if (earnedBadges.includes(badge.id)) continue;
-      if (!badge.condition(ctx)) continue;
+    dynamicBadges.forEach((badge: any) => {
+      // ... döngü devamı ...
+      // Zaten kazanılmış mı?
+      if (earnedBadges.includes(badge.id)) return;
 
-      await updateDoc(userRef, {
-        earnedBadges: arrayUnion(badge.id),
-      });
+      let earned = false;
 
-      setEarnedBadges((prev) => [...prev, badge.id]);
-      setUnlockedBadge(badge);
-      setIsBadgeModalOpen(true);
-
-      try {
-        confetti({
-          spread: 70,
-          particleCount: 120,
-          origin: { y: 0.6 },
-        });
-      } catch {
-        // ignore
+      // Dinamik Koşul Kontrolü
+      if (badge.conditionType === "total_habits") {
+        if (totalCompleted >= badge.conditionValue) earned = true;
+      } else if (badge.conditionType === "streak_days") {
+        if (maxStreak >= badge.conditionValue) earned = true;
+      } else if (badge.conditionType === "level_reached") {
+        if (level >= badge.conditionValue) earned = true;
       }
 
+      if (earned) {
+        newlyEarned.push(badge);
+
+        // Admin Log
+        try {
+          const { addDoc, collection, serverTimestamp } = require("firebase/firestore"); // Lazy import
+          addDoc(collection(db, "global_activities"), {
+            type: "badge_earned",
+            title: badge.name,
+            description: "yeni bir rozet kazandı!",
+            userId,
+            userDisplayName: auth.currentUser?.displayName || "Kullanıcı",
+            timestamp: serverTimestamp(),
+          }).catch((err: any) => console.error("Log error", err));
+        } catch (e) { }
+      }
+    });
+
+    if (newlyEarned.length > 0) {
+      // İlkini göster (modal için)
+      setUnlockedBadge(newlyEarned[0]);
+      setIsBadgeModalOpen(true);
       playSuccess();
-      break;
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+
+      // Firestore'a kaydet (User dokümanına)
+      // Burada sadece ID'leri ekliyoruz
+      const newBadgeIds = newlyEarned.map((b) => b.id);
+
+      // State güncelle
+      setEarnedBadges((prev) => [...prev, ...newBadgeIds]);
+
+      if (userId) {
+        const userRef = doc(db, "users", userId);
+        updateDoc(userRef, {
+          earnedBadges: arrayUnion(...newBadgeIds),
+          // Varsa XP ödülü de verilebilir
+          score: score + (newlyEarned[0].xpReward || 50)
+        });
+      }
     }
   };
 

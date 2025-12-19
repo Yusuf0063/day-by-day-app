@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { collection, getDocs, orderBy, query, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { User as UserIcon, Calendar, Trophy, Heart } from "lucide-react";
+import { db, auth } from "@/lib/firebase";
+import { User as UserIcon, Calendar, Trophy, Heart, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 type UserData = {
     id: string;
@@ -46,6 +47,47 @@ export default function UsersPage() {
         fetchUsers();
     }, []);
 
+    const handleDeleteUser = async (userId: string, userName: string) => {
+        const confirmDelete = window.confirm(
+            `⚠️ DİKKAT!\n\n"${userName}" kullanıcısını silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz ve kullanıcının tüm verileri (alışkanlıklar, puanlar, giriş yetkisi) kalıcı olarak silinecektir.`
+        );
+
+        if (!confirmDelete) return;
+
+        const toastId = toast.loading("Kullanıcı siliniyor...");
+
+        try {
+            // 1. Admin Token al (Güvenlik için API'ye göndereceğiz)
+            const token = await auth.currentUser?.getIdToken();
+
+            if (!token) {
+                toast.error("Oturum hatası: Lütfen tekrar giriş yapın.");
+                return;
+            }
+
+            // 2. API'ye silme isteği gönder
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || "Silme işlemi başarısız");
+            }
+
+            // 3. Başarılı ise yerel listeden çıkar
+            setUsers((prev) => prev.filter((u) => u.id !== userId));
+            toast.success("Kullanıcı başarıyla silindi", { id: toastId });
+
+        } catch (error: any) {
+            console.error("Silme hatası:", error);
+            toast.error(`Hata: ${error.message}`, { id: toastId });
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex h-64 items-center justify-center">
@@ -77,6 +119,7 @@ export default function UsersPage() {
                                 <th className="px-6 py-4 font-semibold">Durum</th>
                                 <th className="px-6 py-4 font-semibold">Son Giriş</th>
                                 <th className="px-6 py-4 font-semibold">ID</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -137,6 +180,15 @@ export default function UsersPage() {
                                         <code className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500 dark:bg-slate-800">
                                             {user.id.slice(0, 8)}...
                                         </code>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            onClick={() => handleDeleteUser(user.id, user.displayName || user.email || "Kullanıcı")}
+                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors dark:hover:bg-red-900/20 dark:text-red-400"
+                                            title="Kullanıcıyı Sil"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

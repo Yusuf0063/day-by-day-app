@@ -28,7 +28,7 @@ import {
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import AuthModal from "../../components/auth-modal";
 import CalendarHeatmap from "react-calendar-heatmap";
-import { BADGES, type BadgeDefinition, type BadgeId } from "../../lib/badges";
+import { type BadgeDefinition, type BadgeId } from "../../lib/badges";
 
 type Habit = {
   id: string;
@@ -44,19 +44,11 @@ type UserStats = {
   activeFrame?: string | null;
 };
 
-const getBadgeIconElement = (badge: BadgeDefinition) => {
-  switch (badge.icon) {
-    case "Rocket":
-      return <Rocket className="h-6 w-6" />;
-    case "Flame":
-      return <Flame className="h-6 w-6" />;
-    case "Crown":
-      return <Crown className="h-6 w-6" />;
-    case "Medal":
-      return <Medal className="h-6 w-6" />;
-    default:
-      return <Rocket className="h-6 w-6" />;
-  }
+// Helper for badges
+const getBadgeIcon = (iconName: string) => {
+  // Bu fonksiyon artık gereksiz olabilir çünkü iconName emoji veya URL olacak.
+  // Ama eski icon adlarını desteklemek için tutabiliriz veya direkt emoji basarız.
+  return <span className="text-xl">{iconName}</span>;
 };
 
 export default function ProfilePage() {
@@ -69,6 +61,29 @@ export default function ProfilePage() {
   const pathname = usePathname();
   const router = useRouter();
   const [earnedBadges, setEarnedBadges] = useState<BadgeId[]>([]);
+  const [dynamicBadges, setDynamicBadges] = useState<BadgeDefinition[]>([]);
+
+  // Rozetleri Çek
+  useEffect(() => {
+    const q = query(collection(db, "badges"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const badgeList: BadgeDefinition[] = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        badgeList.push({
+          id: doc.id,
+          name: d.name,
+          description: d.description,
+          icon: d.imageUrl || "🏆",
+          xpReward: d.xpReward || 50,
+          conditionType: d.conditionType,
+          conditionValue: d.conditionValue
+        } as any);
+      });
+      setDynamicBadges(badgeList);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Auth: Kullanıcı kontrolü
   useEffect(() => {
@@ -336,7 +351,7 @@ export default function ProfilePage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {BADGES.map((badge) => {
+              {dynamicBadges.map((badge) => {
                 const unlocked = earnedBadges.includes(badge.id);
 
                 return (
@@ -360,7 +375,7 @@ export default function ProfilePage() {
                       ? "bg-gradient-to-br from-purple-100 to-white text-purple-600 ring-purple-200 dark:from-purple-900 dark:to-slate-900 dark:text-purple-300 dark:ring-purple-800"
                       : "bg-slate-100 text-slate-300 ring-slate-200 dark:bg-slate-800 dark:text-slate-600 dark:ring-slate-700"
                       }`}>
-                      {getBadgeIconElement(badge)}
+                      {getBadgeIcon(badge.icon || "🏆")}
                     </div>
 
                     <div className={`text-sm font-bold ${unlocked ? "text-slate-800 dark:text-slate-100" : "text-slate-400 dark:text-slate-500"}`}>
@@ -441,6 +456,6 @@ export default function ProfilePage() {
         activeTheme={userStats.activeTheme}
         activeFrame={userStats.activeFrame}
       />
-    </div>
+    </div >
   );
 }
